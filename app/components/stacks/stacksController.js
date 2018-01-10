@@ -1,90 +1,50 @@
 angular.module('stacks', [])
-.controller('StacksController', ['$scope', 'Notifications', 'Pagination', 'StackService', 'ModalService',
-function ($scope, Notifications, Pagination, StackService, ModalService) {
-  $scope.state = {};
-  $scope.state.selectedItemCount = 0;
-  $scope.state.pagination_count = Pagination.getPaginationCount('stacks');
-  $scope.sortType = 'Name';
-  $scope.sortReverse = false;
-  $scope.state.DisplayInformationPanel = false;
-  $scope.state.DisplayExternalStacks = true;
-
-  $scope.changePaginationCount = function() {
-    Pagination.setPaginationCount('stacks', $scope.state.pagination_count);
+.controller('StacksController', ['$scope', '$state', 'Notifications', 'StackService', 'ModalService',
+function ($scope, $state, Notifications, StackService, ModalService) {
+  $scope.state = {
+    displayInformationPanel: false,
+    displayExternalStacks: true
   };
 
-  $scope.order = function (sortType) {
-    $scope.sortReverse = ($scope.sortType === sortType) ? !$scope.sortReverse : false;
-    $scope.sortType = sortType;
-  };
-
-  $scope.selectItems = function (allSelected) {
-    angular.forEach($scope.state.filteredStacks, function (stack) {
-      if (stack.Id && stack.Checked !== allSelected) {
-        stack.Checked = allSelected;
-        $scope.selectItem(stack);
-      }
-    });
-  };
-
-  $scope.selectItem = function (item) {
-    if (item.Checked) {
-      $scope.state.selectedItemCount++;
-    } else {
-      $scope.state.selectedItemCount--;
-    }
-  };
-
-  $scope.removeAction = function () {
+  $scope.removeAction = function(selectedItems) {
     ModalService.confirmDeletion(
       'Do you want to remove the selected stack(s)? Associated services will be removed as well.',
       function onConfirm(confirmed) {
         if(!confirmed) { return; }
-        deleteSelectedStacks();
+        deleteSelectedStacks(selectedItems);
       }
     );
   };
 
-  function deleteSelectedStacks() {
-    $('#loadingViewSpinner').show();
-    var counter = 0;
-
-    var complete = function () {
-      counter = counter - 1;
-      if (counter === 0) {
-        $('#loadingViewSpinner').hide();
-      }
-    };
-
-    angular.forEach($scope.stacks, function (stack) {
-      if (stack.Checked) {
-        counter = counter + 1;
-        StackService.remove(stack)
-        .then(function success() {
-          Notifications.success('Stack deleted', stack.Name);
-          var index = $scope.stacks.indexOf(stack);
-          $scope.stacks.splice(index, 1);
-        })
-        .catch(function error(err) {
-          Notifications.error('Failure', err, 'Unable to remove stack ' + stack.Name);
-        })
-        .finally(function final() {
-          complete();
-        });
-      }
+  function deleteSelectedStacks(stacks) {
+    var actionCount = stacks.length;
+    angular.forEach(stacks, function (stack) {
+      StackService.remove(stack)
+      .then(function success() {
+        Notifications.success('Stack successfully removed', stack.Name);
+        var index = $scope.stacks.indexOf(stack);
+        $scope.stacks.splice(index, 1);
+      })
+      .catch(function error(err) {
+        Notifications.error('Failure', err, 'Unable to remove stack ' + stack.Name);
+      })
+      .finally(function final() {
+        --actionCount;
+        if (actionCount === 0) {
+          $state.reload();
+        }
+      });
     });
   }
 
   function initView() {
-    $('#loadingViewSpinner').show();
-
     StackService.stacks(true)
     .then(function success(data) {
       var stacks = data;
       for (var i = 0; i < stacks.length; i++) {
         var stack = stacks[i];
         if (stack.External) {
-          $scope.state.DisplayInformationPanel = true;
+          $scope.state.displayInformationPanel = true;
           break;
         }
       }
@@ -93,9 +53,6 @@ function ($scope, Notifications, Pagination, StackService, ModalService) {
     .catch(function error(err) {
       $scope.stacks = [];
       Notifications.error('Failure', err, 'Unable to retrieve stacks');
-    })
-    .finally(function final() {
-      $('#loadingViewSpinner').hide();
     });
   }
 

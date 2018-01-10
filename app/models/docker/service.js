@@ -1,4 +1,4 @@
-function ServiceViewModel(data, runningTasks, nodes) {
+function ServiceViewModel(data, runningTasks, allTasks, nodes) {
   this.Model = data;
   this.Id = data.ID;
   this.Tasks = [];
@@ -12,8 +12,8 @@ function ServiceViewModel(data, runningTasks, nodes) {
     this.Replicas = data.Spec.Mode.Replicated.Replicas;
   } else {
     this.Mode = 'global';
-    if (nodes) {
-      this.Replicas = nodes.length;
+    if (allTasks) {
+      this.Replicas = allTasks.length;
     }
   }
   if (runningTasks) {
@@ -31,13 +31,13 @@ function ServiceViewModel(data, runningTasks, nodes) {
   }
 
   if (data.Spec.TaskTemplate.RestartPolicy) {
-    this.RestartCondition = data.Spec.TaskTemplate.RestartPolicy.Condition;
-    this.RestartDelay = data.Spec.TaskTemplate.RestartPolicy.Delay;
-    this.RestartMaxAttempts = data.Spec.TaskTemplate.RestartPolicy.MaxAttempts;
-    this.RestartWindow = data.Spec.TaskTemplate.RestartPolicy.Window;
+    this.RestartCondition = data.Spec.TaskTemplate.RestartPolicy.Condition || 'any';
+    this.RestartDelay = data.Spec.TaskTemplate.RestartPolicy.Delay || 5000000000;
+    this.RestartMaxAttempts = data.Spec.TaskTemplate.RestartPolicy.MaxAttempts || 0;
+    this.RestartWindow = data.Spec.TaskTemplate.RestartPolicy.Window || 0;
   } else {
-    this.RestartCondition = 'none';
-    this.RestartDelay = 0;
+    this.RestartCondition = 'any';
+    this.RestartDelay = 5000000000;
     this.RestartMaxAttempts = 0;
     this.RestartWindow = 0;
   }
@@ -69,6 +69,7 @@ function ServiceViewModel(data, runningTasks, nodes) {
     this.Hosts = containerSpec.Hosts;
     this.DNSConfig = containerSpec.DNSConfig;
     this.Secrets = containerSpec.Secrets;
+    this.Configs = containerSpec.Configs;
   }
   if (data.Endpoint) {
     this.Ports = data.Endpoint.Ports;

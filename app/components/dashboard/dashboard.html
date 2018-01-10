@@ -1,7 +1,5 @@
 <rd-header>
-  <rd-header-title title="Home">
-    <i id="loadingViewSpinner" class="fa fa-cog fa-spin"></i>
-  </rd-header-title>
+  <rd-header-title title="Home"></rd-header-title>
   <rd-header-content>Dashboard</rd-header-content>
 </rd-header>
 
@@ -77,6 +75,13 @@
               <td>Nodes in the cluster</td>
               <td>{{ infoData.Swarm.Nodes }}</td>
             </tr>
+            <tr>
+              <td colspan="2">
+                <div class="btn-group" role="group" aria-label="...">
+                  <a ui-sref="swarm.visualizer"><i class="fa fa-object-group space-right" aria-hidden="true"></i>Go to cluster visualizer</a>
+                </div>
+              </td>
+            </tr>
           </tbody>
         </table>
       </rd-widget-body>
@@ -85,7 +90,7 @@
 </div>
 
 <div class="row">
-  <div class="col-xs-12 col-md-6" ng-if="applicationState.endpoint.mode.provider === 'DOCKER_SWARM_MODE'">
+  <div class="col-xs-12 col-md-6" ng-if="applicationState.endpoint.mode.provider === 'DOCKER_SWARM_MODE' && applicationState.endpoint.mode.role === 'MANAGER'">
     <a ui-sref="stacks">
       <rd-widget>
         <rd-widget-body>
@@ -98,7 +103,7 @@
       </rd-widget>
     </a>
   </div>
-  <div class="col-xs-12 col-md-6" ng-if="applicationState.endpoint.mode.provider === 'DOCKER_SWARM_MODE'">
+  <div class="col-xs-12 col-md-6" ng-if="applicationState.endpoint.mode.provider === 'DOCKER_SWARM_MODE' && applicationState.endpoint.mode.role === 'MANAGER'">
     <a ui-sref="services">
       <rd-widget>
         <rd-widget-body>
@@ -170,7 +175,4 @@
       </rd-widget>
     </a>
   </div>
-</div>
-
-<div class="row">
 </div>

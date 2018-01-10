@@ -1,44 +1,15 @@
 angular.module('teams', [])
-.controller('TeamsController', ['$q', '$scope', '$state', 'TeamService', 'UserService', 'TeamMembershipService', 'ModalService', 'Notifications', 'Pagination', 'Authentication',
-function ($q, $scope, $state, TeamService, UserService, TeamMembershipService, ModalService, Notifications, Pagination, Authentication) {
+.controller('TeamsController', ['$q', '$scope', '$state', 'TeamService', 'UserService', 'ModalService', 'Notifications', 'Authentication',
+function ($q, $scope, $state, TeamService, UserService, ModalService, Notifications, Authentication) {
   $scope.state = {
     userGroupGroupCreationError: '',
-    selectedItemCount: 0,
     validName: false,
-    pagination_count: Pagination.getPaginationCount('teams')
+    actionInProgress: false
   };
-  $scope.sortType = 'Name';
-  $scope.sortReverse = false;
 
   $scope.formValues = {
     Name: '',
     Leaders: []
-  };
-
-  $scope.order = function(sortType) {
-    $scope.sortReverse = ($scope.sortType === sortType) ? !$scope.sortReverse : false;
-    $scope.sortType = sortType;
-  };
-
-  $scope.changePaginationCount = function() {
-    Pagination.setPaginationCount('teams', $scope.state.pagination_count);
-  };
-
-  $scope.selectItems = function (allSelected) {
-    angular.forEach($scope.state.filteredTeams, function (team) {
-      if (team.Checked !== allSelected) {
-        team.Checked = allSelected;
-        $scope.selectItem(team);
-      }
-    });
-  };
-
-  $scope.selectItem = function (item) {
-    if (item.Checked) {
-      $scope.state.selectedItemCount++;
-    } else {
-      $scope.state.selectedItemCount--;
-    }
   };
 
   $scope.checkNameValidity = function() {
@@ -54,7 +25,7 @@ function ($q, $scope, $state, TeamService, UserService, TeamMembershipService, M
   };
 
   $scope.addTeam = function() {
-    $('#createTeamSpinner').show();
+    $scope.state.actionInProgress = true;
     $scope.state.teamCreationError = '';
     var teamName = $scope.formValues.Name;
     var leaderIds = [];
@@ -71,50 +42,42 @@ function ($q, $scope, $state, TeamService, UserService, TeamMembershipService, M
       Notifications.error('Failure', err, 'Unable to create team');
     })
     .finally(function final() {
-      $('#createTeamSpinner').hide();
+      $scope.state.actionInProgress = false;
     });
   };
 
-  function deleteSelectedTeams() {
-    $('#loadingViewSpinner').show();
-    var counter = 0;
-    var complete = function () {
-      counter = counter - 1;
-      if (counter === 0) {
-        $('#loadingViewSpinner').hide();
-      }
-    };
-    angular.forEach($scope.teams, function (team) {
-      if (team.Checked) {
-        counter = counter + 1;
-        TeamService.deleteTeam(team.Id)
-        .then(function success(data) {
-          var index = $scope.teams.indexOf(team);
-          $scope.teams.splice(index, 1);
-          Notifications.success('Team successfully deleted', team.Name);
-        })
-        .catch(function error(err) {
-          Notifications.error('Failure', err, 'Unable to remove team');
-        })
-        .finally(function final() {
-          complete();
-        });
-      }
-    });
-  }
-
-  $scope.removeAction = function () {
+  $scope.removeAction = function (selectedItems) {
     ModalService.confirmDeletion(
       'Do you want to delete the selected team(s)? Users in the team(s) will not be deleted.',
       function onConfirm(confirmed) {
         if(!confirmed) { return; }
-        deleteSelectedTeams();
+        deleteSelectedTeams(selectedItems);
       }
     );
   };
 
+  function deleteSelectedTeams(selectedItems) {
+    var actionCount = selectedItems.length;
+    angular.forEach(selectedItems, function (team) {
+      TeamService.deleteTeam(team.Id)
+      .then(function success() {
+        Notifications.success('Team successfully removed', team.Name);
+        var index = $scope.teams.indexOf(team);
+        $scope.teams.splice(index, 1);
+      })
+      .catch(function error(err) {
+        Notifications.error('Failure', err, 'Unable to remove team');
+      })
+      .finally(function final() {
+        --actionCount;
+        if (actionCount === 0) {
+          $state.reload();
+        }
+      });
+    });
+  }
+
   function initView() {
-    $('#loadingViewSpinner').show();
     var userDetails = Authentication.getUserDetails();
     var isAdmin = userDetails.role === 1 ? true: false;
     $scope.isAdmin = isAdmin;
@@ -130,9 +93,6 @@ function ($q, $scope, $state, TeamService, UserService, TeamMembershipService, M
       $scope.teams = [];
       $scope.users = [];
       Notifications.error('Failure', err, 'Unable to retrieve teams');
-    })
-    .finally(function final() {
-      $('#loadingViewSpinner').hide();
     });
   }
 

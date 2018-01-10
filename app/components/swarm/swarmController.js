@@ -1,24 +1,11 @@
 angular.module('swarm', [])
-.controller('SwarmController', ['$q', '$scope', 'SystemService', 'NodeService', 'Pagination', 'Notifications', 'StateManager', 'Authentication',
-function ($q, $scope, SystemService, NodeService, Pagination, Notifications, StateManager, Authentication) {
-  $scope.state = {};
-  $scope.state.pagination_count = Pagination.getPaginationCount('swarm_nodes');
-  $scope.sortType = 'Spec.Role';
-  $scope.sortReverse = false;
+.controller('SwarmController', ['$q', '$scope', 'SystemService', 'NodeService', 'Notifications', 'StateManager', 'Authentication',
+function ($q, $scope, SystemService, NodeService, Notifications, StateManager, Authentication) {
   $scope.info = {};
   $scope.docker = {};
   $scope.swarm = {};
   $scope.totalCPU = 0;
   $scope.totalMemory = 0;
-
-  $scope.order = function(sortType) {
-    $scope.sortReverse = ($scope.sortType === sortType) ? !$scope.sortReverse : false;
-    $scope.sortType = sortType;
-  };
-
-  $scope.changePaginationCount = function() {
-    Pagination.setPaginationCount('swarm_nodes', $scope.state.pagination_count);
-  };
 
   function extractSwarmInfo(info) {
     // Swarm info is available in SystemStatus object
@@ -72,8 +59,6 @@ function ($q, $scope, SystemService, NodeService, Pagination, Notifications, Sta
   }
 
   function initView() {
-    $('#loadingViewSpinner').show();
-
     if (StateManager.getState().application.authentication) {
       var userDetails = Authentication.getUserDetails();
       var isAdmin = userDetails.role === 1 ? true: false;
@@ -99,9 +84,6 @@ function ($q, $scope, SystemService, NodeService, Pagination, Notifications, Sta
     })
     .catch(function error(err) {
       Notifications.error('Failure', err, 'Unable to retrieve cluster details');
-    })
-    .finally(function final() {
-      $('#loadingViewSpinner').hide();
     });
   }
 

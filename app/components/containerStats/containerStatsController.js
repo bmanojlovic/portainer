@@ -1,23 +1,10 @@
 angular.module('containerStats', [])
-.controller('ContainerStatsController', ['$q', '$scope', '$transition$', '$document', '$interval', 'ContainerService', 'ChartService', 'Notifications', 'Pagination',
-function ($q, $scope, $transition$, $document, $interval, ContainerService, ChartService, Notifications, Pagination) {
+.controller('ContainerStatsController', ['$q', '$scope', '$transition$', '$document', '$interval', 'ContainerService', 'ChartService', 'Notifications',
+function ($q, $scope, $transition$, $document, $interval, ContainerService, ChartService, Notifications) {
 
   $scope.state = {
     refreshRate: '5',
     networkStatsUnavailable: false
-  };
-
-  $scope.state.pagination_count = Pagination.getPaginationCount('stats_processes');
-  $scope.sortType = 'CMD';
-  $scope.sortReverse = false;
-
-  $scope.order = function (sortType) {
-    $scope.sortReverse = ($scope.sortType === sortType) ? !$scope.sortReverse : false;
-    $scope.sortType = sortType;
-  };
-
-  $scope.changePaginationCount = function() {
-    Pagination.setPaginationCount('stats_processes', $scope.state.pagination_count);
   };
 
   $scope.$on('$destroy', function() {
@@ -80,7 +67,6 @@ function ($q, $scope, $transition$, $document, $interval, ContainerService, Char
   };
 
   function startChartUpdate(networkChart, cpuChart, memoryChart) {
-    $('#loadingViewSpinner').show();
     $q.all({
       stats: ContainerService.containerStats($transition$.params().id),
       top: ContainerService.containerTop($transition$.params().id)
@@ -99,9 +85,6 @@ function ($q, $scope, $transition$, $document, $interval, ContainerService, Char
     .catch(function error(err) {
       stopRepeater();
       Notifications.error('Failure', err, 'Unable to retrieve container statistics');
-    })
-    .finally(function final() {
-      $('#loadingViewSpinner').hide();
     });
   }
 
@@ -143,17 +126,12 @@ function ($q, $scope, $transition$, $document, $interval, ContainerService, Char
   }
 
   function initView() {
-    $('#loadingViewSpinner').show();
-
     ContainerService.container($transition$.params().id)
     .then(function success(data) {
       $scope.container = data;
     })
     .catch(function error(err) {
       Notifications.error('Failure', err, 'Unable to retrieve container information');
-    })
-    .finally(function final() {
-      $('#loadingViewSpinner').hide();
     });
 
     $document.ready(function() {

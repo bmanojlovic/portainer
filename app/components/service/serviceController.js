@@ -1,26 +1,15 @@
 angular.module('service', [])
-.controller('ServiceController', ['$q', '$scope', '$transition$', '$state', '$location', '$timeout', '$anchorScroll', 'ServiceService', 'SecretService', 'SecretHelper', 'Service', 'ServiceHelper', 'LabelHelper', 'TaskService', 'NodeService', 'Notifications', 'Pagination', 'ModalService',
-function ($q, $scope, $transition$, $state, $location, $timeout, $anchorScroll, ServiceService, SecretService, SecretHelper, Service, ServiceHelper, LabelHelper, TaskService, NodeService, Notifications, Pagination, ModalService) {
+.controller('ServiceController', ['$q', '$scope', '$transition$', '$state', '$location', '$timeout', '$anchorScroll', 'ServiceService', 'ConfigService', 'ConfigHelper', 'SecretService', 'ImageService', 'SecretHelper', 'Service', 'ServiceHelper', 'LabelHelper', 'TaskService', 'NodeService', 'Notifications', 'ModalService',
+function ($q, $scope, $transition$, $state, $location, $timeout, $anchorScroll, ServiceService, ConfigService, ConfigHelper, SecretService, ImageService, SecretHelper, Service, ServiceHelper, LabelHelper, TaskService, NodeService, Notifications, ModalService) {
 
   $scope.state = {};
-  $scope.state.pagination_count = Pagination.getPaginationCount('service_tasks');
   $scope.tasks = [];
-  $scope.sortType = 'Updated';
-  $scope.sortReverse = true;
+  $scope.availableImages = [];
 
   $scope.lastVersion = 0;
 
   var originalService = {};
   var previousServiceValues = [];
-
-  $scope.order = function (sortType) {
-    $scope.sortReverse = ($scope.sortType === sortType) ? !$scope.sortReverse : false;
-    $scope.sortType = sortType;
-  };
-
-  $scope.changePaginationCount = function() {
-    Pagination.setPaginationCount('service_tasks', $scope.state.pagination_count);
-  };
 
   $scope.renameService = function renameService(service) {
     updateServiceAttribute(service, 'Name', service.newServiceName || service.name);
@@ -59,10 +48,31 @@ function ($q, $scope, $transition$, $state, $location, $timeout, $anchorScroll, 
       updateServiceArray(service, 'EnvironmentVariables', service.EnvironmentVariables);
     }
   };
-  $scope.addSecret = function addSecret(service, secret) {
-    if (secret && service.ServiceSecrets.filter(function(serviceSecret) { return serviceSecret.Id === secret.Id;}).length === 0) {
-      service.ServiceSecrets.push({ Id: secret.Id, Name: secret.Name, FileName: secret.Name, Uid: '0', Gid: '0', Mode: 444 });
-      updateServiceArray(service, 'ServiceSecrets', service.ServiceSecrets);
+  $scope.addConfig = function addConfig(service, config) {
+    if (config && service.ServiceConfigs.filter(function(serviceConfig) { return serviceConfig.Id === config.Id;}).length === 0) {
+      service.ServiceConfigs.push({ Id: config.Id, Name: config.Name, FileName: config.Name, Uid: '0', Gid: '0', Mode: 292 });
+      updateServiceArray(service, 'ServiceConfigs', service.ServiceConfigs);
+    }
+  };
+  $scope.removeConfig = function removeSecret(service, index) {
+    var removedElement = service.ServiceConfigs.splice(index, 1);
+    if (removedElement !== null) {
+      updateServiceArray(service, 'ServiceConfigs', service.ServiceConfigs);
+    }
+  };
+  $scope.updateConfig = function updateConfig(service) {
+    updateServiceArray(service, 'ServiceConfigs', service.ServiceConfigs);
+  };
+  $scope.addSecret = function addSecret(service, newSecret) {
+    if (newSecret.secret) {
+      var filename = newSecret.secret.Name;
+      if (newSecret.override) {
+        filename = newSecret.target;
+      }
+      if (service.ServiceSecrets.filter(function(serviceSecret) { return serviceSecret.Id === newSecret.secret.Id && serviceSecret.FileName === filename;}).length === 0) {
+        service.ServiceSecrets.push({ Id: newSecret.secret.Id, Name: newSecret.secret.Name, FileName: filename, Uid: '0', Gid: '0', Mode: 444 });
+        updateServiceArray(service, 'ServiceSecrets', service.ServiceSecrets);
+      }
     }
   };
   $scope.removeSecret = function removeSecret(service, index) {
@@ -185,7 +195,6 @@ function ($q, $scope, $transition$, $state, $location, $timeout, $anchorScroll, 
   };
 
   $scope.updateService = function updateService(service) {
-    $('#loadingViewSpinner').show();
     var config = ServiceHelper.serviceToConfig(service.Model);
     config.Name = service.Name;
     config.Labels = LabelHelper.fromKeyValueToLabelHash(service.ServiceLabels);
@@ -193,6 +202,7 @@ function ($q, $scope, $transition$, $state, $location, $timeout, $anchorScroll, 
     config.TaskTemplate.ContainerSpec.Labels = LabelHelper.fromKeyValueToLabelHash(service.ServiceContainerLabels);
     config.TaskTemplate.ContainerSpec.Image = service.Image;
     config.TaskTemplate.ContainerSpec.Secrets = service.ServiceSecrets ? service.ServiceSecrets.map(SecretHelper.secretConfig) : [];
+    config.TaskTemplate.ContainerSpec.Configs = service.ServiceConfigs ? service.ServiceConfigs.map(ConfigHelper.configConfig) : [];
 
     if (service.Mode === 'replicated') {
       config.Mode.Replicated.Replicas = service.Replicas;
@@ -222,16 +232,16 @@ function ($q, $scope, $transition$, $state, $location, $timeout, $anchorScroll, 
 
     config.UpdateConfig = {
       Parallelism: service.UpdateParallelism,
-      Delay: service.UpdateDelay,
+      Delay: ServiceHelper.translateHumanDurationToNanos(service.UpdateDelay) || 0,
       FailureAction: service.UpdateFailureAction,
       Order: service.UpdateOrder
     };
 
     config.TaskTemplate.RestartPolicy = {
       Condition: service.RestartCondition,
-      Delay: service.RestartDelay,
+      Delay: ServiceHelper.translateHumanDurationToNanos(service.RestartDelay) || 5000000000,
       MaxAttempts: service.RestartMaxAttempts,
-      Window: service.RestartWindow
+      Window: ServiceHelper.translateHumanDurationToNanos(service.RestartWindow) || 0
     };
 
     if (service.Ports) {
@@ -248,7 +258,6 @@ function ($q, $scope, $transition$, $state, $location, $timeout, $anchorScroll, 
     };
 
     Service.update({ id: service.Id, version: service.Version }, config, function (data) {
-      $('#loadingViewSpinner').hide();
       if (data.message && data.message.match(/^rpc error:/)) {
         Notifications.error(data.message, 'Error');
       } else {
@@ -257,7 +266,6 @@ function ($q, $scope, $transition$, $state, $location, $timeout, $anchorScroll, 
       $scope.cancelChanges({});
       initView();
     }, function (e) {
-      $('#loadingViewSpinner').hide();
       Notifications.error('Failure', e, 'Unable to update service');
     });
   };
@@ -273,7 +281,6 @@ function ($q, $scope, $transition$, $state, $location, $timeout, $anchorScroll, 
   };
 
   function removeService() {
-    $('#loadingViewSpinner').show();
     ServiceService.remove($scope.service)
     .then(function success(data) {
       Notifications.success('Service successfully deleted');
@@ -281,14 +288,12 @@ function ($q, $scope, $transition$, $state, $location, $timeout, $anchorScroll, 
     })
     .catch(function error(err) {
       Notifications.error('Failure', err, 'Unable to remove service');
-    })
-    .finally(function final() {
-      $('#loadingViewSpinner').hide();
     });
   }
 
   function translateServiceArrays(service) {
     service.ServiceSecrets = service.Secrets ? service.Secrets.map(SecretHelper.flattenSecret) : [];
+    service.ServiceConfigs = service.Configs ? service.Configs.map(ConfigHelper.flattenConfig) : [];
     service.EnvironmentVariables = ServiceHelper.translateEnvironmentVariables(service.Env);
     service.ServiceLabels = LabelHelper.fromLabelHashToKeyValue(service.Labels);
     service.ServiceContainerLabels = LabelHelper.fromLabelHashToKeyValue(service.ContainerLabels);
@@ -304,8 +309,13 @@ function ($q, $scope, $transition$, $state, $location, $timeout, $anchorScroll, 
     service.ReservationMemoryBytes = service.ReservationMemoryBytes / 1024 / 1024 || 0;
   }
 
+  function transformDurations(service) {
+    service.RestartDelay = ServiceHelper.translateNanosToHumanDuration(service.RestartDelay) || '5s';
+    service.RestartWindow = ServiceHelper.translateNanosToHumanDuration(service.RestartWindow) || '0s';
+    service.UpdateDelay = ServiceHelper.translateNanosToHumanDuration(service.UpdateDelay) || '0s';
+  }
+
   function initView() {
-    $('#loadingViewSpinner').show();
     var apiVersion = $scope.applicationState.endpoint.apiVersion;
     ServiceService.service($transition$.params().id)
     .then(function success(data) {
@@ -317,19 +327,24 @@ function ($q, $scope, $transition$, $state, $location, $timeout, $anchorScroll, 
 
       transformResources(service);
       translateServiceArrays(service);
+      transformDurations(service);
       $scope.service = service;
       originalService = angular.copy(service);
 
       return $q.all({
         tasks: TaskService.tasks({ service: [service.Name] }),
         nodes: NodeService.nodes(),
-        secrets: apiVersion >= 1.25 ? SecretService.secrets() : []
+        secrets: apiVersion >= 1.25 ? SecretService.secrets() : [],
+        configs: apiVersion >= 1.30 ? ConfigService.configs() : [],
+        availableImages: ImageService.images()
       });
     })
     .then(function success(data) {
       $scope.tasks = data.tasks;
       $scope.nodes = data.nodes;
+      $scope.configs = data.configs;
       $scope.secrets = data.secrets;
+      $scope.availableImages = ImageService.getUniqueTagListFromImages(data.availableImages);
 
       // Set max cpu value
       var maxCpus = 0;
@@ -344,16 +359,17 @@ function ($q, $scope, $transition$, $state, $location, $timeout, $anchorScroll, 
         $scope.state.sliderMaxCpu = 32;
       }
 
+      // Default values
+      $scope.state.addSecret = {override: false};
+
       $timeout(function() {
         $anchorScroll();
       });
     })
     .catch(function error(err) {
       $scope.secrets = [];
+      $scope.configs = [];
       Notifications.error('Failure', err, 'Unable to retrieve service details');
-    })
-    .finally(function final() {
-      $('#loadingViewSpinner').hide();
     });
   }
 

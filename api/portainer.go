@@ -73,6 +73,7 @@ type (
 		TemplatesURL                       string               `json:"TemplatesURL"`
 		LogoURL                            string               `json:"LogoURL"`
 		BlackListedLabels                  []Pair               `json:"BlackListedLabels"`
+		DisplayDonationHeader              bool                 `json:"DisplayDonationHeader"`
 		DisplayExternalContributors        bool                 `json:"DisplayExternalContributors"`
 		AuthenticationMethod               AuthenticationMethod `json:"AuthenticationMethod"`
 		LDAPSettings                       LDAPSettings         `json:"LDAPSettings"`
@@ -138,6 +139,7 @@ type (
 		EntryPoint  string  `json:"EntryPoint"`
 		SwarmID     string  `json:"SwarmId"`
 		ProjectPath string
+		Env         []Pair `json:"Env"`
 	}
 
 	// RegistryID represents a registry identifier.
@@ -379,6 +381,8 @@ type (
 
 	// StackManager represents a service to manage stacks.
 	StackManager interface {
+		Login(dockerhub *DockerHub, registries []Registry, endpoint *Endpoint) error
+		Logout(endpoint *Endpoint) error
 		Deploy(stack *Stack, endpoint *Endpoint) error
 		Remove(stack *Stack, endpoint *Endpoint) error
 	}
@@ -386,9 +390,9 @@ type (
 
 const (
 	// APIVersion is the version number of the Portainer API.
-	APIVersion = "1.15.0"
+	APIVersion = "1.15.5"
 	// DBVersion is the version number of the Portainer database.
-	DBVersion = 6
+	DBVersion = 7
 	// DefaultTemplatesURL represents the default URL for the templates definitions.
 	DefaultTemplatesURL = "https://raw.githubusercontent.com/portainer/templates/master/templates.json"
 )
@@ -446,4 +450,6 @@ const (
 	SecretResourceControl
 	// StackResourceControl represents a resource control associated to a stack composed of Docker services
 	StackResourceControl
+	// ConfigResourceControl represents a resource control associated to a Docker config
+	ConfigResourceControl
 )

@@ -1,8 +1,8 @@
 // @@OLD_SERVICE_CONTROLLER: this service should be rewritten to use services.
 // See app/components/templates/templatesController.js as a reference.
 angular.module('createService', [])
-.controller('CreateServiceController', ['$q', '$scope', '$state', '$timeout', 'Service', 'ServiceHelper', 'SecretHelper', 'SecretService', 'VolumeService', 'NetworkService', 'ImageHelper', 'LabelHelper', 'Authentication', 'ResourceControlService', 'Notifications', 'FormValidator', 'RegistryService', 'HttpRequestHelper', 'NodeService', 'SettingsService',
-function ($q, $scope, $state, $timeout, Service, ServiceHelper, SecretHelper, SecretService, VolumeService, NetworkService, ImageHelper, LabelHelper, Authentication, ResourceControlService, Notifications, FormValidator, RegistryService, HttpRequestHelper, NodeService, SettingsService) {
+.controller('CreateServiceController', ['$q', '$scope', '$state', '$timeout', 'Service', 'ServiceHelper', 'ConfigService', 'ConfigHelper', 'SecretHelper', 'SecretService', 'VolumeService', 'NetworkService', 'ImageHelper', 'LabelHelper', 'Authentication', 'ResourceControlService', 'Notifications', 'FormValidator', 'RegistryService', 'HttpRequestHelper', 'NodeService', 'SettingsService',
+function ($q, $scope, $state, $timeout, Service, ServiceHelper, ConfigService, ConfigHelper, SecretHelper, SecretService, VolumeService, NetworkService, ImageHelper, LabelHelper, Authentication, ResourceControlService, Notifications, FormValidator, RegistryService, HttpRequestHelper, NodeService, SettingsService) {
 
   $scope.formValues = {
     Name: '',
@@ -24,21 +24,27 @@ function ($q, $scope, $state, $timeout, Service, ServiceHelper, SecretHelper, Se
     Parallelism: 1,
     PlacementConstraints: [],
     PlacementPreferences: [],
-    UpdateDelay: 0,
+    UpdateDelay: '0s',
     UpdateOrder: 'stop-first',
     FailureAction: 'pause',
     Secrets: [],
+    Configs: [],
     AccessControlData: new AccessControlFormData(),
     CpuLimit: 0,
     CpuReservation: 0,
     MemoryLimit: 0,
     MemoryReservation: 0,
     MemoryLimitUnit: 'MB',
-    MemoryReservationUnit: 'MB'
+    MemoryReservationUnit: 'MB',
+    RestartCondition: 'any',
+    RestartDelay: '5s',
+    RestartMaxAttempts: 0,
+    RestartWindow: '0s'
   };
 
   $scope.state = {
-    formValidationError: ''
+    formValidationError: '',
+    actionInProgress: false
   };
 
   $scope.refreshSlider = function () {
@@ -71,8 +77,16 @@ function ($q, $scope, $state, $timeout, Service, ServiceHelper, SecretHelper, Se
     $scope.formValues.Volumes.splice(index, 1);
   };
 
+  $scope.addConfig = function() {
+    $scope.formValues.Configs.push({});
+  };
+
+  $scope.removeConfig = function(index) {
+    $scope.formValues.Configs.splice(index, 1);
+  };
+
   $scope.addSecret = function() {
-    $scope.formValues.Secrets.push({});
+    $scope.formValues.Secrets.push({ overrideTarget: false });
   };
 
   $scope.removeSecret = function(index) {
@@ -189,10 +203,32 @@ function ($q, $scope, $state, $timeout, Service, ServiceHelper, SecretHelper, Se
     config.TaskTemplate.ContainerSpec.Labels = LabelHelper.fromKeyValueToLabelHash(input.ContainerLabels);
   }
 
+  function createMountObjectFromVolume(volumeObject, target, readonly) {
+    return {
+      Target: target,
+      Source: volumeObject.Id,
+      Type: 'volume',
+      ReadOnly: readonly,
+      VolumeOptions: {
+        Labels: volumeObject.Labels,
+        DriverConfig: {
+          Name: volumeObject.Driver,
+          Options: volumeObject.Options
+        }
+      }
+    };
+  }
+
   function prepareVolumes(config, input) {
     input.Volumes.forEach(function (volume) {
       if (volume.Source && volume.Target) {
-        config.TaskTemplate.ContainerSpec.Mounts.push(volume);
+        if (volume.Type !== 'volume') {
+          config.TaskTemplate.ContainerSpec.Mounts.push(volume);
+        } else {
+          var volumeObject = volume.Source;
+          var mount = createMountObjectFromVolume(volumeObject, volume.Target, volume.ReadOnly);
+          config.TaskTemplate.ContainerSpec.Mounts.push(mount);
+        }
       }
     });
   }
@@ -211,15 +247,38 @@ function ($q, $scope, $state, $timeout, Service, ServiceHelper, SecretHelper, Se
   function prepareUpdateConfig(config, input) {
     config.UpdateConfig = {
       Parallelism: input.Parallelism || 0,
-      Delay: input.UpdateDelay || 0,
+      Delay: ServiceHelper.translateHumanDurationToNanos(input.UpdateDelay) || 0,
       FailureAction: input.FailureAction,
       Order: input.UpdateOrder
     };
   }
 
+  function prepareRestartPolicy(config, input) {
+    config.TaskTemplate.RestartPolicy = {
+      Condition: input.RestartCondition || 'any',
+      Delay: ServiceHelper.translateHumanDurationToNanos(input.RestartDelay) || 5000000000,
+      MaxAttempts: input.RestartMaxAttempts || 0,
+      Window: ServiceHelper.translateHumanDurationToNanos(input.RestartWindow) || 0
+    };    
+  }
+
   function preparePlacementConfig(config, input) {
     config.TaskTemplate.Placement.Constraints = ServiceHelper.translateKeyValueToPlacementConstraints(input.PlacementConstraints);
     config.TaskTemplate.Placement.Preferences = ServiceHelper.translateKeyValueToPlacementPreferences(input.PlacementPreferences);
+  }
+
+  function prepareConfigConfig(config, input) {
+    if (input.Configs) {
+      var configs = [];
+      angular.forEach(input.Configs, function(config) {
+        if (config.model) {
+          var s = ConfigHelper.configConfig(config.model);
+          s.File.Name = config.FileName || s.File.Name;
+          configs.push(s);
+        }
+      });
+      config.TaskTemplate.ContainerSpec.Configs = configs;
+    }
   }
 
   function prepareSecretConfig(config, input) {
@@ -229,6 +288,9 @@ function ($q, $scope, $state, $timeout, Service, ServiceHelper, SecretHelper, Se
         if (secret.model) {
           var s = SecretHelper.secretConfig(secret.model);
           s.File.Name = s.SecretName;
+          if (secret.overrideTarget && secret.target && secret.target !== '') {
+            s.File.Name = secret.target;
+          }
           secrets.push(s);
         }
       });
@@ -294,10 +356,12 @@ function ($q, $scope, $state, $timeout, Service, ServiceHelper, SecretHelper, Se
     prepareVolumes(config, input);
     prepareNetworks(config, input);
     prepareUpdateConfig(config, input);
+    prepareConfigConfig(config, input);
     prepareSecretConfig(config, input);
     preparePlacementConfig(config, input);
     prepareResourcesCpuConfig(config, input);
     prepareResourcesMemoryConfig(config, input);
+    prepareRestartPolicy(config, input);
     return config;
   }
 
@@ -320,7 +384,7 @@ function ($q, $scope, $state, $timeout, Service, ServiceHelper, SecretHelper, Se
       Notifications.error('Failure', err, 'Unable to create service');
     })
     .finally(function final() {
-      $('#createServiceSpinner').hide();
+      $scope.state.actionInProgress = false;
     });
   }
 
@@ -337,17 +401,16 @@ function ($q, $scope, $state, $timeout, Service, ServiceHelper, SecretHelper, Se
   }
 
   $scope.create = function createService() {
-    $('#createServiceSpinner').show();
 
     var accessControlData = $scope.formValues.AccessControlData;
     var userDetails = Authentication.getUserDetails();
-    var isAdmin = userDetails.role === 1 ? true : false;
+    var isAdmin = userDetails.role === 1;
 
     if (!validateForm(accessControlData, isAdmin)) {
-      $('#createServiceSpinner').hide();
       return;
     }
 
+    $scope.state.actionInProgress = true;
     var config = prepareConfiguration();
     createNewService(config, accessControlData);
   };
@@ -376,14 +439,14 @@ function ($q, $scope, $state, $timeout, Service, ServiceHelper, SecretHelper, Se
   }
 
   function initView() {
-    $('#loadingViewSpinner').show();
     var apiVersion = $scope.applicationState.endpoint.apiVersion;
     var provider = $scope.applicationState.endpoint.mode.provider;
 
     $q.all({
       volumes: VolumeService.volumes(),
-      secrets: apiVersion >= 1.25 ? SecretService.secrets() : [],
       networks: NetworkService.networks(true, true, false, false),
+      secrets: apiVersion >= 1.25 ? SecretService.secrets() : [],
+      configs: apiVersion >= 1.30 ? ConfigService.configs() : [],
       nodes: NodeService.nodes(),
       settings: SettingsService.publicSettings()
     })
@@ -391,18 +454,16 @@ function ($q, $scope, $state, $timeout, Service, ServiceHelper, SecretHelper, Se
       $scope.availableVolumes = data.volumes;
       $scope.availableNetworks = data.networks;
       $scope.availableSecrets = data.secrets;
+      $scope.availableConfigs = data.configs;
       var nodes = data.nodes;
       initSlidersMaxValuesBasedOnNodeData(nodes);
       var settings = data.settings;
       $scope.allowBindMounts = settings.AllowBindMountsForRegularUsers;
       var userDetails = Authentication.getUserDetails();
-      $scope.isAdmin = userDetails.role === 1 ? true : false;
+      $scope.isAdmin = userDetails.role === 1;
     })
     .catch(function error(err) {
       Notifications.error('Failure', err, 'Unable to initialize view');
-    })
-    .finally(function final() {
-      $('#loadingViewSpinner').hide();
     });
   }
 

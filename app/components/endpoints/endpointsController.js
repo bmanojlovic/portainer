@@ -1,13 +1,10 @@
 angular.module('endpoints', [])
-.controller('EndpointsController', ['$scope', '$state', 'EndpointService', 'EndpointProvider', 'Notifications', 'Pagination',
-function ($scope, $state, EndpointService, EndpointProvider, Notifications, Pagination) {
+.controller('EndpointsController', ['$scope', '$state', '$filter',  'EndpointService', 'Notifications',
+function ($scope, $state, $filter, EndpointService, Notifications) {
   $scope.state = {
     uploadInProgress: false,
-    selectedItemCount: 0,
-    pagination_count: Pagination.getPaginationCount('endpoints')
+    actionInProgress: false
   };
-  $scope.sortType = 'Name';
-  $scope.sortReverse = true;
 
   $scope.formValues = {
     Name: '',
@@ -16,35 +13,9 @@ function ($scope, $state, EndpointService, EndpointProvider, Notifications, Pagi
     SecurityFormData: new EndpointSecurityFormData()
   };
 
-  $scope.order = function(sortType) {
-    $scope.sortReverse = ($scope.sortType === sortType) ? !$scope.sortReverse : false;
-    $scope.sortType = sortType;
-  };
-
-  $scope.changePaginationCount = function() {
-    Pagination.setPaginationCount('endpoints', $scope.state.pagination_count);
-  };
-
-  $scope.selectItems = function (allSelected) {
-    angular.forEach($scope.state.filteredEndpoints, function (endpoint) {
-      if (endpoint.Checked !== allSelected) {
-        endpoint.Checked = allSelected;
-        $scope.selectItem(endpoint);
-      }
-    });
-  };
-
-  $scope.selectItem = function (item) {
-    if (item.Checked) {
-      $scope.state.selectedItemCount++;
-    } else {
-      $scope.state.selectedItemCount--;
-    }
-  };
-
   $scope.addEndpoint = function() {
     var name = $scope.formValues.Name;
-    var URL = $scope.formValues.URL;
+    var URL = $filter('stripprotocol')($scope.formValues.URL);
     var PublicURL = $scope.formValues.PublicURL;
     if (PublicURL === '') {
       PublicURL = URL.split(':')[0];
@@ -59,11 +30,13 @@ function ($scope, $state, EndpointService, EndpointProvider, Notifications, Pagi
     var TLSCertFile = TLSSkipClientVerify ? null : securityData.TLSCert;
     var TLSKeyFile = TLSSkipClientVerify ? null : securityData.TLSKey;
 
+    $scope.state.actionInProgress = true;
     EndpointService.createRemoteEndpoint(name, URL, PublicURL, TLS, TLSSkipVerify, TLSSkipClientVerify, TLSCAFile, TLSCertFile, TLSKeyFile).then(function success(data) {
       Notifications.success('Endpoint created', name);
       $state.reload();
     }, function error(err) {
       $scope.state.uploadInProgress = false;
+      $scope.state.actionInProgress = false;
       Notifications.error('Failure', err, 'Unable to create endpoint');
     }, function update(evt) {
       if (evt.upload) {
@@ -72,33 +45,28 @@ function ($scope, $state, EndpointService, EndpointProvider, Notifications, Pagi
     });
   };
 
-  $scope.removeAction = function () {
-    $('#loadEndpointsSpinner').show();
-    var counter = 0;
-    var complete = function () {
-      counter = counter - 1;
-      if (counter === 0) {
-        $('#loadEndpointsSpinner').hide();
-      }
-    };
-    angular.forEach($scope.endpoints, function (endpoint) {
-      if (endpoint.Checked) {
-        counter = counter + 1;
-        EndpointService.deleteEndpoint(endpoint.Id).then(function success(data) {
-          Notifications.success('Endpoint deleted', endpoint.Name);
-          var index = $scope.endpoints.indexOf(endpoint);
-          $scope.endpoints.splice(index, 1);
-          complete();
-        }, function error(err) {
-          Notifications.error('Failure', err, 'Unable to remove endpoint');
-          complete();
-        });
-      }
+  $scope.removeAction = function (selectedItems) {
+    var actionCount = selectedItems.length;
+    angular.forEach(selectedItems, function (endpoint) {
+      EndpointService.deleteEndpoint(endpoint.Id)
+      .then(function success() {
+        Notifications.success('Endpoint successfully removed', endpoint.Name);
+        var index = $scope.endpoints.indexOf(endpoint);
+        $scope.endpoints.splice(index, 1);
+      })
+      .catch(function error(err) {
+        Notifications.error('Failure', err, 'Unable to remove endpoint');
+      })
+      .finally(function final() {
+        --actionCount;
+        if (actionCount === 0) {
+          $state.reload();
+        }
+      });
     });
   };
 
   function fetchEndpoints() {
-    $('#loadEndpointsSpinner').show();
     EndpointService.endpoints()
     .then(function success(data) {
       $scope.endpoints = data;
@@ -106,9 +74,6 @@ function ($scope, $state, EndpointService, EndpointProvider, Notifications, Pagi
     .catch(function error(err) {
       Notifications.error('Failure', err, 'Unable to retrieve endpoints');
       $scope.endpoints = [];
-    })
-    .finally(function final() {
-      $('#loadEndpointsSpinner').hide();
     });
   }
 
